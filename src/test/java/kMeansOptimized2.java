@@ -1,0 +1,101 @@
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.*;
+import org.apache.hadoop.io.*;
+import org.apache.hadoop.mapreduce.*;
+
+import java.io.*;
+import java.net.URI;
+import java.util.*;
+
+public class KMeansOptimized2 {
+
+    public static class KMeansMapper extends Mapper<Object, Text, Text, Text> {
+
+        private List<String> centroids = new ArrayList<>();
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            URI[] cacheFiles = context.getCacheFiles();
+            Path path = new Path(cacheFiles[0]);
+            FileSystem fs = FileSystem.get(context.getConfiguration());
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(path)))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    centroids.add(line);
+                }
+            }
+        }
+
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            String[] pointCoords = value.toString().split(",");
+            int pointX = Integer.parseInt(pointCoords[0]);
+            int pointY = Integer.parseInt(pointCoords[1]);
+
+            double minDistance = Double.POSITIVE_INFINITY;
+            String closestCentroid = null;
+
+            for (String centroid : centroids) {
+                String[] centroidCoords = centroid.split(",");
+                int centroidX = Integer.parseInt(centroidCoords[0]);
+                int centroidY = Integer.parseInt(centroidCoords[1]);
+
+                double distance = Math.sqrt(Math.pow(pointX - centroidX, 2) + Math.pow(pointY - centroidY, 2));
+
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestCentroid = centroid;
+                }
+            }
+
+            context.write(new Text(closestCentroid), new Text(pointX + "," + pointY));
+        }
+    }
+
+    public static class KMeansCombiner extends Reducer<Text, Text, Text, Text> {
+
+        public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            for (Text value : values) {
+                context.write(key, value);
+            }
+        }
+    }
+
+    public static class KMeansReducer extends Reducer<Text, Text, Text, Text> {
+
+        public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            StringBuilder dataPoints = new StringBuilder();
+
+            for (Text value : values) {
+                dataPoints.append(value.toString()).append(" ");
+            }
+
+            context.write(key, new Text(dataPoints.toString().trim()));
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length != 3) {
+            System.err.println("Usage: KMeansOptimized <centroids_file> <input_dataset> <output_directory>");
+            System.exit(1);
+        }
+
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf, "KMeans Optimized");
+
+        job.setJarByClass(KMeansOptimized.class);
+        job.setMapperClass(KMeansMapper.class);
+        job.setCombinerClass(KMeansCombiner.class);
+        job.setReducerClass(KMeansReducer.class);
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+
+        // Add the centroids file to the distributed cache
+        job.addCacheFile(new URI(args[0])); // args[0] contains the path to the centroids file
+
+        FileInputFormat.addInputPath(job, new Path(args[1])); // args[1] contains the path to the input dataset
+        FileOutputFormat.setOutputPath(job, new Path(args[2])); // args[2] contains the path to the output directory
+
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}
