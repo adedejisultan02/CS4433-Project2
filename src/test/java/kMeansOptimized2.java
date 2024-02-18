@@ -2,12 +2,14 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapreduce.*;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 import java.io.*;
 import java.net.URI;
 import java.util.*;
 
-public class KMeansOptimized2 {
+public class kMeansOptimized2 {
 
     public static class KMeansMapper extends Mapper<Object, Text, Text, Text> {
 
@@ -82,7 +84,7 @@ public class KMeansOptimized2 {
         Configuration conf = new Configuration();
         Job job = Job.getInstance(conf, "KMeans Optimized");
 
-        job.setJarByClass(KMeansOptimized.class);
+        job.setJarByClass(kMeansOptimized.class);
         job.setMapperClass(KMeansMapper.class);
         job.setCombinerClass(KMeansCombiner.class);
         job.setReducerClass(KMeansReducer.class);
