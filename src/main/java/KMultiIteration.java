@@ -13,7 +13,7 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
-public class KMeansWrapper {
+public class KMultiIteration {
 
     public static class KMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
 
@@ -121,7 +121,7 @@ public class KMeansWrapper {
 
             Job job = Job.getInstance(conf, "KMeans");
 
-            job.setJarByClass(KMeansWrapper.class);
+            job.setJarByClass(KMultiIteration.class);
             job.setMapperClass(KMapper.class);
             job.setReducerClass(KReducer.class);
 
@@ -165,7 +165,7 @@ public class KMeansWrapper {
 
             Job job = Job.getInstance(conf, "KMeans");
 
-            job.setJarByClass(KMeansWrapper.class);
+            job.setJarByClass(KMultiIteration.class);
             job.setMapperClass(KMapper.class);
             job.setReducerClass(KReducer.class);
 

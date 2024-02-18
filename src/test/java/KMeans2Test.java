@@ -9,7 +9,7 @@ public class KMeans2Test {
         input[2] = "output";
         input[3] = String.valueOf(3);
 
-        KMeansWrapper wc = new KMeansWrapper();
+        KMultiIteration wc = new KMultiIteration();
         wc.debug(input);
 
     }
