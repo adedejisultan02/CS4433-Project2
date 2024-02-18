@@ -2,10 +2,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.DoubleWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
@@ -14,7 +12,7 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
-public class kMeansOptimized2 {
+public class KMeans {
 
     public static class KMeansMapper extends Mapper<Object, Text, IntWritable, Text> {
 
@@ -88,7 +86,7 @@ public class kMeansOptimized2 {
         Configuration conf = new Configuration();
         conf.setInt("k", 3); // Number of clusters
         Job job = Job.getInstance(conf, "kmeans");
-        job.setJarByClass(kMeansOptimized2.class);
+        job.setJarByClass(KMeans.class);
         job.setMapperClass(KMeansMapper.class);
         job.setReducerClass(KMeansReducer.class);
         job.setOutputKeyClass(IntWritable.class);
