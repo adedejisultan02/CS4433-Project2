@@ -1,5 +1,5 @@
 --read pages
-pages = LOAD 'hdfs://localhost:9000/user/cs4433/project2/pages.csv' USING PigStorage(',') as (PersonID: chararray, Name:chararray, Nationality:chararray, CountryCode:chararray, Hobby:chararray);
+pages = LOAD 'pages.csv' USING PigStorage(',') as (PersonID:chararray, Name:chararray, Nationality:chararray, CountryCode:chararray, Hobby:chararray);
 
 group_data = GROUP pages BY Nationality;
 
