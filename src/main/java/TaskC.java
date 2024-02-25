@@ -13,27 +13,23 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
-public class AdvancedKMeans {
+public class TaskC {
     static List<Double[]> centroids = new ArrayList<>();
 
     public static class KMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
-        @Override
-        protected void setup(Mapper.Context context) throws InterruptedException {
-            try (BufferedReader br = new BufferedReader(new FileReader("seeds.csv"))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String[] parts = line.split(",");
-                    centroids.add(new Double[]{Double.parseDouble(parts[0]), Double.parseDouble(parts[1])});
-                    System.out.println("value of centroid " + Arrays.toString(centroids.get(centroids.size() - 1)));
-                }
-                br.close();
+        private List<double[]> centroids = new ArrayList<>();
 
-                for (int i = 0; i < centroids.size(); i++) {
-                    System.out.println("Centroid " + i + ": " + Arrays.toString(centroids.get(i)));
-                }
-            } catch (IOException e) {
-                System.err.println("Error reading centroids file: " + e.getMessage());
-                throw new InterruptedException("Error reading centroids file");
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            int k = conf.getInt("clusters", 1); // Number of clusters
+            Random rand = new Random();
+            for (int i = 0; i < k; i++) {
+                double[] centroid = new double[2]; // Assuming 2D data
+                centroid[0] = rand.nextDouble() * 100; // Random initialization
+                centroid[1] = rand.nextDouble() * 100; // Random initialization
+                System.out.println(Arrays.toString(centroid));
+                centroids.add(centroid);
             }
         }
 
@@ -99,17 +95,12 @@ public class AdvancedKMeans {
     }
 
     public void debug(String[] args) throws Exception {
-        if (args.length != 4) {
-            System.err.println("Not enough arguments");
-            System.exit(1);
-        }
-
         Configuration conf = new Configuration();
         FileSystem hdfs = FileSystem.get(conf);
 
         int maxIterations = Integer.parseInt(args[3]);
         int iteration = 0;
-        boolean converged = false;
+        boolean converged;
         while (iteration < maxIterations) {
             Path output = new Path(args[2] + "_" + iteration);
             if (hdfs.exists(output)) {
@@ -117,11 +108,11 @@ public class AdvancedKMeans {
             }
 
             System.out.println("iteration " + iteration);
-            conf.setInt("kmeans.iteration", iteration);
+            conf.setInt("clusters", Integer.parseInt(args[1]));
 
             Job job = Job.getInstance(conf, "KMeans");
 
-            job.setJarByClass(AdvancedKMeans.class);
+            job.setJarByClass(TaskC.class);
             job.setMapperClass(KMapper.class);
             job.setReducerClass(KReducer.class);
 
@@ -153,29 +144,25 @@ public class AdvancedKMeans {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 5) {
-            System.err.println("Not enough arguments");
-            System.exit(1);
-        }
 
         Configuration conf = new Configuration();
         FileSystem hdfs = FileSystem.get(conf);
 
-        int maxIterations = Integer.parseInt(args[4]);
+        int maxIterations = 5;
         int iteration = 0;
         boolean converged;
         while (iteration < maxIterations) {
-            Path output = new Path(args[3] + "_" + iteration);
+            Path output = new Path("output" + "_" + iteration);
             if (hdfs.exists(output)) {
                 hdfs.delete(output, true);
             }
 
             System.out.println("iteration " + iteration);
-            conf.setInt("kmeans.iteration", iteration);
+            conf.setInt("clusters", 2);
 
             Job job = Job.getInstance(conf, "KMeans");
 
-            job.setJarByClass(AdvancedKMeans.class);
+            job.setJarByClass(TaskC.class);
             job.setMapperClass(KMapper.class);
             job.setReducerClass(KReducer.class);
 
@@ -188,7 +175,7 @@ public class AdvancedKMeans {
             job.setInputFormatClass(TextInputFormat.class);
             job.setOutputFormatClass(TextOutputFormat.class);
 
-            FileInputFormat.addInputPath(job, new Path(args[1]));
+            FileInputFormat.addInputPath(job, new Path("dataset.csv"));
             FileOutputFormat.setOutputPath(job, output);
 
             job.waitForCompletion(true);

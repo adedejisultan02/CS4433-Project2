@@ -13,32 +13,23 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
-public class KMultiIteration {
+public class TaskB {
 
     public static class KMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
 
-        private final List<Double[]> centroids = new ArrayList<>();
-
+        private List<double[]> centroids = new ArrayList<>();
 
         @Override
-        protected void setup(Mapper.Context context) throws InterruptedException {
-            System.out.println("Setting up mapper");
-
-            try (BufferedReader br = new BufferedReader(new FileReader("seeds.csv"))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String[] parts = line.split(",");
-                    centroids.add(new Double[]{Double.parseDouble(parts[0]), Double.parseDouble(parts[1])});
-                    System.out.println("value of centroid " + Arrays.toString(centroids.get(centroids.size() - 1)));
-                }
-                br.close();
-
-                for (int i = 0; i < centroids.size(); i++) {
-                    System.out.println("Centroid " + i + ": " + Arrays.toString(centroids.get(i)));
-                }
-            } catch (IOException e) {
-                System.err.println("Error reading centroids file: " + e.getMessage());
-                throw new InterruptedException("Error reading centroids file");
+        protected void setup(Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            int k = conf.getInt("k", 1); // Number of clusters
+            Random rand = new Random();
+            for (int i = 0; i < k; i++) {
+                double[] centroid = new double[2]; // Assuming 2D data
+                centroid[0] = rand.nextDouble() * 100; // Random initialization
+                centroid[1] = rand.nextDouble() * 100; // Random initialization
+                System.out.println(Arrays.toString(centroid));
+                centroids.add(centroid);
             }
         }
 
@@ -64,50 +55,41 @@ public class KMultiIteration {
         }
     }
 
-    public static class KReducer extends Reducer<IntWritable, Text, NullWritable, Text> {
+    public static class KReducer extends Reducer<IntWritable, Text, IntWritable, Text> {
 
-        private final List<Double[]> oldCentroids = new ArrayList<>();
+
 
         @Override
         protected void reduce(IntWritable key, Iterable<Text> values, Context context)
                 throws IOException, InterruptedException {
-            double sumX = 0, sumY = 0, count = 0;
-
+            List<double[]> points = new ArrayList<>();
             for (Text value : values) {
-                String[] parts = value.toString().split(",");
-                sumX += Double.parseDouble(parts[0]);
-                sumY += Double.parseDouble(parts[1]);
-                count++;
+                String[] tokens = value.toString().split(",");
+                double x = Double.parseDouble(tokens[0]);
+                double y = Double.parseDouble(tokens[1]);
+                points.add(new double[]{x, y});
             }
 
-            Double[] newCentroid = new Double[]{sumX / count, sumY / count};
-            oldCentroids.add(newCentroid);
-
-
-
-            // Update old centroids
-            if (oldCentroids.size() <= key.get()) {
-                while (oldCentroids.size() <= key.get()) {
-                    oldCentroids.add(null);
-                }
+            // Calculate the new centroid
+            double sumX = 0, sumY = 0;
+            for (double[] point : points) {
+                sumX += point[0];
+                sumY += point[1];
             }
+            double newX = sumX / points.size();
+            double newY = sumY / points.size();
+            System.out.println(newX + " " + newY);
 
-            // Write new centroid
-            context.write(NullWritable.get(),
-                    new Text("Centroid " + key.get() + ": " + Arrays.toString(newCentroid)));
+            // Emit the new centroid
+            context.write(key, new Text(newX + "," + newY));
         }
     }
 
     public void debug(String[] args) throws Exception {
-        if (args.length != 4) {
-            System.err.println("Not enough arguments");
-            System.exit(1);
-        }
+
 
         Configuration conf = new Configuration();
         FileSystem hdfs = FileSystem.get(conf);
-
-
 
         int maxIterations = Integer.parseInt(args[3]);
         int iteration;
@@ -121,14 +103,14 @@ public class KMultiIteration {
 
             Job job = Job.getInstance(conf, "KMeans");
 
-            job.setJarByClass(KMultiIteration.class);
+            job.setJarByClass(TaskB.class);
             job.setMapperClass(KMapper.class);
             job.setReducerClass(KReducer.class);
 
             job.setMapOutputKeyClass(IntWritable.class);
             job.setMapOutputValueClass(Text.class);
 
-            job.setOutputKeyClass(NullWritable.class);
+            job.setOutputKeyClass(IntWritable.class);
             job.setOutputValueClass(Text.class);
 
             job.setInputFormatClass(TextInputFormat.class);
@@ -143,42 +125,34 @@ public class KMultiIteration {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4) {
-            System.err.println("Not enough arguments");
-            System.exit(1);
-        }
-
         Configuration conf = new Configuration();
         FileSystem hdfs = FileSystem.get(conf);
 
-
-
-        int maxIterations = Integer.parseInt(args[3]);
+        int maxIterations = 3;
         int iteration;
         for (iteration = 0; iteration < maxIterations; iteration++) {
-            Path output = new Path(args[2]+"_"+iteration);
+            Path output = new Path("output" +"_"+iteration);
             if (hdfs.exists(output)) {
                 hdfs.delete(output, true);
             }
             System.out.println("iteration " + iteration);
-            conf.setInt("kmeans.iteration", iteration);
 
             Job job = Job.getInstance(conf, "KMeans");
 
-            job.setJarByClass(KMultiIteration.class);
+            job.setJarByClass(TaskB.class);
             job.setMapperClass(KMapper.class);
             job.setReducerClass(KReducer.class);
 
             job.setMapOutputKeyClass(IntWritable.class);
             job.setMapOutputValueClass(Text.class);
 
-            job.setOutputKeyClass(NullWritable.class);
+            job.setOutputKeyClass(IntWritable.class);
             job.setOutputValueClass(Text.class);
 
             job.setInputFormatClass(TextInputFormat.class);
             job.setOutputFormatClass(TextOutputFormat.class);
 
-            FileInputFormat.addInputPath(job, new Path(args[0]));
+            FileInputFormat.addInputPath(job, new Path("dataset.csv"));
             FileOutputFormat.setOutputPath(job, output);
 
             job.waitForCompletion(true);
