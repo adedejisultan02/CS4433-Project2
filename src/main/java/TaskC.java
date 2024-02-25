@@ -13,32 +13,23 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
-public class KMultiIteration {
+public class TaskC {
+    static List<Double[]> centroids = new ArrayList<>();
 
     public static class KMapper extends Mapper<LongWritable, Text, IntWritable, Text> {
-
-        private final List<Double[]> centroids = new ArrayList<>();
-
+        private List<double[]> centroids = new ArrayList<>();
 
         @Override
-        protected void setup(Mapper.Context context) throws InterruptedException {
-            System.out.println("Setting up mapper");
-
-            try (BufferedReader br = new BufferedReader(new FileReader("seeds.csv"))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String[] parts = line.split(",");
-                    centroids.add(new Double[]{Double.parseDouble(parts[0]), Double.parseDouble(parts[1])});
-                    System.out.println("value of centroid " + Arrays.toString(centroids.get(centroids.size() - 1)));
-                }
-                br.close();
-
-                for (int i = 0; i < centroids.size(); i++) {
-                    System.out.println("Centroid " + i + ": " + Arrays.toString(centroids.get(i)));
-                }
-            } catch (IOException e) {
-                System.err.println("Error reading centroids file: " + e.getMessage());
-                throw new InterruptedException("Error reading centroids file");
+        protected void setup(Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            int k = conf.getInt("clusters", 1); // Number of clusters
+            Random rand = new Random();
+            for (int i = 0; i < k; i++) {
+                double[] centroid = new double[2]; // Assuming 2D data
+                centroid[0] = rand.nextDouble() * 100; // Random initialization
+                centroid[1] = rand.nextDouble() * 100; // Random initialization
+                System.out.println(Arrays.toString(centroid));
+                centroids.add(centroid);
             }
         }
 
@@ -65,8 +56,8 @@ public class KMultiIteration {
     }
 
     public static class KReducer extends Reducer<IntWritable, Text, NullWritable, Text> {
-
-        private final List<Double[]> oldCentroids = new ArrayList<>();
+        public static enum ConvergenceCounter { CONVERGED }
+        private List<Double[]> oldCentroids = new ArrayList<>();
 
         @Override
         protected void reduce(IntWritable key, Iterable<Text> values, Context context)
@@ -81,47 +72,47 @@ public class KMultiIteration {
             }
 
             Double[] newCentroid = new Double[]{sumX / count, sumY / count};
-            oldCentroids.add(newCentroid);
+            oldCentroids.add(newCentroid); // Update centroids
 
-
-
-            // Update old centroids
-            if (oldCentroids.size() <= key.get()) {
-                while (oldCentroids.size() <= key.get()) {
-                    oldCentroids.add(null);
+            // Check if centroids converge
+            if (oldCentroids.size() > key.get()) {
+                System.out.println("Checking convergence");
+                Double[] oldCentroid = oldCentroids.get(key.get());
+                double threshold = 0.001; // Adjust threshold as needed
+                if (Math.abs(oldCentroid[0] - newCentroid[0]) <= threshold &&
+                        Math.abs(oldCentroid[1] - newCentroid[1]) <= threshold) {
+                    // Centroids haven't changed, terminate
+                    context.getCounter(ConvergenceCounter.CONVERGED).increment(1);
+                    context.setStatus("Centroids haven't changed. Early termination.");
+                    return;
                 }
             }
 
-            // Write new centroid
+            // Emit new centroid
             context.write(NullWritable.get(),
                     new Text("Centroid " + key.get() + ": " + Arrays.toString(newCentroid)));
         }
     }
 
     public void debug(String[] args) throws Exception {
-        if (args.length != 4) {
-            System.err.println("Not enough arguments");
-            System.exit(1);
-        }
-
         Configuration conf = new Configuration();
         FileSystem hdfs = FileSystem.get(conf);
 
-
-
         int maxIterations = Integer.parseInt(args[3]);
-        int iteration;
-        for (iteration = 0; iteration < maxIterations; iteration++) {
-            Path output = new Path(args[2]+"_"+iteration);
+        int iteration = 0;
+        boolean converged;
+        while (iteration < maxIterations) {
+            Path output = new Path(args[2] + "_" + iteration);
             if (hdfs.exists(output)) {
                 hdfs.delete(output, true);
             }
+
             System.out.println("iteration " + iteration);
-            conf.setInt("kmeans.iteration", iteration);
+            conf.setInt("clusters", Integer.parseInt(args[1]));
 
             Job job = Job.getInstance(conf, "KMeans");
 
-            job.setJarByClass(KMultiIteration.class);
+            job.setJarByClass(TaskC.class);
             job.setMapperClass(KMapper.class);
             job.setReducerClass(KReducer.class);
 
@@ -138,34 +129,40 @@ public class KMultiIteration {
             FileOutputFormat.setOutputPath(job, output);
 
             job.waitForCompletion(true);
+            converged = job.getCounters().findCounter(KReducer.ConvergenceCounter.CONVERGED).getValue() > 0;
+
+            // Check if converged
+            if (converged) {
+                System.out.println("Converged. K-Means clustering completed in " + (iteration + 1) + " iterations.");
+                break; // Exit the loop if converged
+            }
+
+            // Clear old centroids for the next iteration
+            centroids.clear();
+            iteration++;
         }
-        System.out.println("K-Means clustering completed in " + (iteration) + " iterations.");
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4) {
-            System.err.println("Not enough arguments");
-            System.exit(1);
-        }
 
         Configuration conf = new Configuration();
         FileSystem hdfs = FileSystem.get(conf);
 
-
-
-        int maxIterations = Integer.parseInt(args[3]);
-        int iteration;
-        for (iteration = 0; iteration < maxIterations; iteration++) {
-            Path output = new Path(args[2]+"_"+iteration);
+        int maxIterations = Integer.parseInt(args[4]);
+        int iteration = 0;
+        boolean converged;
+        while (iteration < maxIterations) {
+            Path output = new Path(args[3] + "_" + iteration);
             if (hdfs.exists(output)) {
                 hdfs.delete(output, true);
             }
+
             System.out.println("iteration " + iteration);
-            conf.setInt("kmeans.iteration", iteration);
+            conf.setInt("clusters", Integer.parseInt(args[2]));
 
             Job job = Job.getInstance(conf, "KMeans");
 
-            job.setJarByClass(KMultiIteration.class);
+            job.setJarByClass(TaskC.class);
             job.setMapperClass(KMapper.class);
             job.setReducerClass(KReducer.class);
 
@@ -178,11 +175,21 @@ public class KMultiIteration {
             job.setInputFormatClass(TextInputFormat.class);
             job.setOutputFormatClass(TextOutputFormat.class);
 
-            FileInputFormat.addInputPath(job, new Path(args[0]));
+            FileInputFormat.addInputPath(job, new Path(args[1]));
             FileOutputFormat.setOutputPath(job, output);
 
             job.waitForCompletion(true);
+            converged = job.getCounters().findCounter(KReducer.ConvergenceCounter.CONVERGED).getValue() > 0;
+
+            // Check if converged
+            if (converged) {
+                System.out.println("Converged. K-Means clustering completed in " + (iteration + 1) + " iterations.");
+                break; // Exit the loop if converged
+            }
+
+            // Clear old centroids for the next iteration
+            centroids.clear();
+            iteration++;
         }
-        System.out.println("K-Means clustering completed in " + (iteration) + " iterations.");
     }
 }
